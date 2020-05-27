@@ -10,6 +10,7 @@
     <packaging>pom</packaging>
     <modules>
         <module>springboot-learn-starter</module>
+        <module>shardingsphere-starter</module>
     </modules>
     <groupId>com.ypw</groupId>
     <artifactId>springboot-learn-starter-parent</artifactId>
