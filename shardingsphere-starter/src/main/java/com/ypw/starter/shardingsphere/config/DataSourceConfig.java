@@ -136,7 +136,7 @@ public class DataSourceConfig {
         Properties p = new Properties();
         p.setProperty("sql.show", Boolean.TRUE.toString());
         // 获取数据源对象
-        DataSource dataSource = ShardingDataSourceFactory.createDataSource(dataSourceMap, shardingRuleConfig, new ConcurrentHashMap<>(), p);
+        DataSource dataSource = ShardingDataSourceFactory.createDataSource(dataSourceMap, shardingRuleConfig, new HashMap<String, Object>(), p);
         return dataSource;
     }
 
