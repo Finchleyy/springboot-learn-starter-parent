@@ -8,6 +8,7 @@ import com.google.common.collect.Lists;
 import io.shardingsphere.api.config.rule.ShardingRuleConfiguration;
 import io.shardingsphere.api.config.rule.TableRuleConfiguration;
 import io.shardingsphere.api.config.strategy.InlineShardingStrategyConfiguration;
+import io.shardingsphere.api.config.strategy.StandardShardingStrategyConfiguration;
 import io.shardingsphere.shardingjdbc.api.ShardingDataSourceFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.ibatis.session.SqlSessionFactory;
@@ -29,7 +30,6 @@ import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Configuration
 @EnableConfigurationProperties({FirstDsProp.class, SecondDsProp.class})
@@ -68,7 +68,7 @@ public class DataSourceConfig {
      * @return
      */
     @Bean("ds1")
-    public DataSource ds1(SecondDsProp secondDsProp) {
+    public DataSource ds1(SecondDsProp secondDsProp) throws SQLException {
         Map<String, Object> dsMap = new HashMap<>();
         dsMap.put("type", secondDsProp.getType());
         dsMap.put("url", secondDsProp.getJdbcUrl());
@@ -76,12 +76,24 @@ public class DataSourceConfig {
         dsMap.put("password", secondDsProp.getPassword());
 
         DruidDataSource ds = (DruidDataSource) buildDataSource(dsMap);
-        ds.setProxyFilters(Lists.newArrayList(statFilter()));
+        //ds.setProxyFilters(Lists.newArrayList(statFilter()));
         // 每个分区最大的连接数
         ds.setMaxActive(20);
         // 每个分区最小的连接数
         ds.setMinIdle(5);
-
+        ds.setFilters("stat");
+        ds.setMaxActive(20);
+        ds.setInitialSize(1);
+        ds.setMaxWait(60000);
+        ds.setMinIdle(10);
+        ds.setTimeBetweenEvictionRunsMillis(60000);
+        ds.setMinEvictableIdleTimeMillis(300000);
+        ds.setValidationQuery("SELECT 1 FROM DUAL");
+        ds.setTestWhileIdle(true);
+        ds.setTestOnBorrow(true);
+        ds.setTestOnReturn(true);
+        ds.setPoolPreparedStatements(true);
+        ds.setMaxOpenPreparedStatements(2001 - 2018);
         return ds;
     }
 
@@ -126,11 +138,11 @@ public class DataSourceConfig {
         //shardingRuleConfig.getTableRuleConfigs().add(addressRuleConfig());
         shardingRuleConfig.getTableRuleConfigs().add(orderRuleConfig());
         shardingRuleConfig.getTableRuleConfigs().add(orderItemRuleConfig());
+        //默认分库规则
         shardingRuleConfig.setDefaultDatabaseShardingStrategyConfig(new InlineShardingStrategyConfiguration("user_id", "ds$->{user_id % 2}"));
-
-        //shardingRuleConfig.getBindingTableGroups().add("t_user, t_user_address");
+        //绑定表规则列表
         shardingRuleConfig.getBindingTableGroups().add("t_order, t_order_item");
-
+        //广播表
         shardingRuleConfig.getBroadcastTables().add("t_product");
 
         Properties p = new Properties();
@@ -157,6 +169,7 @@ public class DataSourceConfig {
         SqlSessionFactoryBean bean = new SqlSessionFactoryBean();
         bean.setDataSource(dataSource);
         bean.setMapperLocations(new PathMatchingResourcePatternResolver().getResources("classpath*:mapper/*.xml"));
+        //bean.setConfigLocation(new ClassPathResource("mybatis-config.xml"));
         return bean.getObject();
     }
 
@@ -166,27 +179,6 @@ public class DataSourceConfig {
         return new SqlSessionTemplate(sqlSessionFactory);
     }
 
-    /*private TableRuleConfiguration userRuleConfig() {
-        TableRuleConfiguration tableRuleConfig = new TableRuleConfiguration();
-        tableRuleConfig.setLogicTable("t_user");
-        tableRuleConfig.setActualDataNodes("ds${0..1}.t_user_${0..1}");
-        tableRuleConfig.setKeyGeneratorColumnName("user_id");
-        tableRuleConfig.setKeyGenerator(new SnowflakeShardingKeyGenerator(workId, datacenterId));
-        tableRuleConfig.setDatabaseShardingStrategyConfig(new StandardShardingStrategyConfiguration("user_id", new IdShardingAlgorithm(), new IdShardingAlgorithm()));
-        tableRuleConfig.setTableShardingStrategyConfig(new StandardShardingStrategyConfiguration("gender", new GenderShardingAlgorithm(), new GenderShardingAlgorithm()));
-        return tableRuleConfig;
-    }
-
-    private TableRuleConfiguration addressRuleConfig() {
-        TableRuleConfiguration tableRuleConfig = new TableRuleConfiguration();
-        tableRuleConfig.setLogicTable("t_user_address");
-        tableRuleConfig.setActualDataNodes("ds${0..1}.t_user_address_${0..1}");
-        tableRuleConfig.setKeyGeneratorColumnName("address_id");
-        tableRuleConfig.setKeyGenerator(new SnowflakeShardingKeyGenerator(workId, datacenterId));
-        tableRuleConfig.setDatabaseShardingStrategyConfig(new StandardShardingStrategyConfiguration("user_id", new IdShardingAlgorithm(), new IdShardingAlgorithm()));
-        tableRuleConfig.setTableShardingStrategyConfig(new StandardShardingStrategyConfiguration("gender", new GenderShardingAlgorithm(), new GenderShardingAlgorithm()));
-        return tableRuleConfig;
-    }*/
 
     private TableRuleConfiguration orderRuleConfig() {
         TableRuleConfiguration tableRuleConfig = new TableRuleConfiguration();
@@ -194,7 +186,9 @@ public class DataSourceConfig {
         tableRuleConfig.setActualDataNodes("ds${0..1}.t_order_${0..1}");
         tableRuleConfig.setKeyGeneratorColumnName("order_id");
         tableRuleConfig.setKeyGenerator(new SnowflakeShardingKeyGenerator(0L, 1L));
+        //分库策略，缺省表示使用默认分库策略
         //tableRuleConfig.setDatabaseShardingStrategyConfig(new StandardShardingStrategyConfiguration("user_id", new IdShardingAlgorithm(), new IdShardingAlgorithm()));
+        //分表策略，缺省表示使用默认分表策略
         tableRuleConfig.setTableShardingStrategyConfig(new InlineShardingStrategyConfiguration("order_id", "t_order$->{order_id % 2}"));
         return tableRuleConfig;
     }
@@ -205,7 +199,9 @@ public class DataSourceConfig {
         tableRuleConfig.setActualDataNodes("ds${0..1}.t_order_item_${0..1}");
         tableRuleConfig.setKeyGeneratorColumnName("order_item_id");
         tableRuleConfig.setKeyGenerator(new SnowflakeShardingKeyGenerator(0L, 2L));
-        //tableRuleConfig.setDatabaseShardingStrategyConfig(new StandardShardingStrategyConfiguration("user_id", new IdShardingAlgorithm(), new IdShardingAlgorithm()));
+        //分库策略，缺省表示使用默认分库策略
+        //tableRuleConfig.setTableShardingStrategyConfig(new StandardShardingStrategyConfiguration("id", idShardingAlgorithm));
+        //分表策略，缺省表示使用默认分表策略
         tableRuleConfig.setTableShardingStrategyConfig(new InlineShardingStrategyConfiguration("order_item_id", "t_order_item$->{order_item_id % 2}"));
         return tableRuleConfig;
     }
